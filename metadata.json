@@ -1,0 +1,7 @@
+{
+  "name": "Community Fitness Tracking",
+  "description": "A community-driven fitness tracker with AI coaching, wiki-style exercise editing, and advanced Bannister model analytics.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
