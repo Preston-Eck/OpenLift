@@ -1,0 +1,137 @@
+// DATA SOURCE: Supabase (PostgreSQL)
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ==========================================
+// 1. USER & INVENTORY (The "OpenLift" Core)
+// ==========================================
+model User {
+  id             String      @id @default(uuid())
+  email          String      @unique
+  username       String?     @unique
+  avatarUrl      String?
+  
+  // Inventory: What do they own? (Filter logic)
+  equipment      UserEquipment[]
+  
+  // Data
+  logs           WorkoutLog[]
+  createdPlans   WorkoutPlan[]
+  historyEntries ExerciseHistory[] // Their contributions to the wiki
+}
+
+model Equipment {
+  id      String @id @default(cuid())
+  name    String @unique // e.g. "Dumbbells", "Squat Rack"
+  users   UserEquipment[]
+  exercises ExerciseEquipment[]
+}
+
+model UserEquipment {
+  userId      String
+  equipmentId String
+  user        User      @relation(fields: [userId], references: [id])
+  equipment   Equipment @relation(fields: [equipmentId], references: [id])
+  @@id([userId, equipmentId])
+}
+
+// ==========================================
+// 2. THE WIKI (Adapted from Wger)
+// ==========================================
+model Exercise {
+  id              String   @id @default(cuid())
+  name            String
+  description     String?  @db.Text
+  targetMuscle    String   // e.g., "Chest", "Lats"
+  
+  // Relationships
+  requiredEquipment ExerciseEquipment[]
+  history           ExerciseHistory[]
+  
+  // Meta
+  isPublic        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  version         Int      @default(1) // Increments on edit
+}
+
+// The "Wikipedia" Audit Trail
+model ExerciseHistory {
+  id            String   @id @default(cuid())
+  exerciseId    String
+  editorId      String
+  
+  // Snapshot of data BEFORE the change
+  previousName  String?
+  previousDesc  String?
+  changeReason  String?  // e.g., "Fixed typo", "Added safety cue"
+  
+  changedAt     DateTime @default(now())
+  
+  exercise      Exercise @relation(fields: [exerciseId], references: [id])
+  editor        User     @relation(fields: [editorId], references: [id])
+}
+
+model ExerciseEquipment {
+  exerciseId  String
+  equipmentId String
+  exercise    Exercise  @relation(fields: [exerciseId], references: [id])
+  equipment   Equipment @relation(fields: [equipmentId], references: [id])
+  @@id([exerciseId, equipmentId])
+}
+
+// ==========================================
+// 3. LOGS & ANALYTICS (Adapted from OpenLift/Elevate)
+// ==========================================
+model WorkoutLog {
+  id              String   @id @default(cuid())
+  userId          String
+  exerciseId      String
+  date            DateTime @default(now())
+  
+  // The "Sets" are stored as JSON for performance (we rarely query individual set reps)
+  // Structure: [{ weight: 100, reps: 5, rpe: 8 }]
+  sets            Json     
+  
+  // Calculated Metrics (The "Bannister" Inputs)
+  totalVolume     Float    // Weight * Reps
+  estimated1RM    Float    // Max set calc
+  stressScore     Float?   // Volume / 1RM (Training Load)
+
+  user            User     @relation(fields: [userId], references: [id])
+}
+
+// ==========================================
+// 4. PLANS (Adapted from WorkoutCool)
+// ==========================================
+model WorkoutPlan {
+  id          String   @id @default(cuid())
+  title       String
+  authorId    String
+  isPublic    Boolean  @default(false)
+  
+  // A Plan has many Days (Split)
+  days        WorkoutDay[]
+  
+  author      User     @relation(fields: [authorId], references: [id])
+}
+
+model WorkoutDay {
+  id          String @id @default(cuid())
+  planId      String
+  name        String // e.g. "Push Day"
+  order       Int
+  
+  // JSON array of exercise IDs and prescribed sets/reps
+  // Structure: [{ exerciseId: "...", targetSets: 3, targetReps: "8-12" }]
+  exercises   Json   
+  
+  plan        WorkoutPlan @relation(fields: [planId], references: [id])
+}
